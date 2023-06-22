@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/tvBatteryCapacity"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="Capacity: Measuring..."
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvBatteryTemp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="Temp: Measuring..."
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvBatteryLevel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="Battery Level: Measuring..."
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvmAh"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="Average Current: Measuring..."
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="Time Elapsed: ..."
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvEvent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="State: ..."
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvWifiAvg"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:text="WiFi Avg: ..."
+        android:layout_marginBottom="16dp" />
+
+</LinearLayout>
