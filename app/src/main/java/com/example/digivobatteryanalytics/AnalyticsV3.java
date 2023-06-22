@@ -67,6 +67,19 @@ public class AnalyticsV3 extends AppCompatActivity {
     private TextView txtAndroidVersion;
     private TextView txtBatteryCapacity;
 
+    private TextView txtStatus;
+    private TextView txtPlugged;
+    private TextView txtLevel;
+    private TextView txtHealth;
+    private TextView txtTech;
+    private TextView txtMaxCapacity;
+    private TextView txtVoltage;
+    private TextView txtTemp;
+    private TextView txtManufacture;
+    private TextView txtAndroidVersionV2;
+    private TextView txtAndroidBuildVersion;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -105,6 +118,22 @@ public class AnalyticsV3 extends AppCompatActivity {
 
         txtBatteryCapacity = findViewById(R.id.txtBatteryCapacity);
         txtBatteryCapacity.setText(getBatteryCapacity() + " mA");
+
+        txtStatus = findViewById(R.id.txtStatus);
+        txtPlugged = findViewById(R.id.txtPlugged);
+        txtLevel = findViewById(R.id.txtLevel);
+        txtHealth = findViewById(R.id.txtHealth);
+        txtTech = findViewById(R.id.txtTech);
+        txtMaxCapacity = findViewById(R.id.txtMaxCapacity);
+        txtVoltage = findViewById(R.id.txtVoltage);
+        txtTemp = findViewById(R.id.txtTemp);
+        txtManufacture = findViewById(R.id.txtManufacture);
+        txtAndroidVersionV2 = findViewById(R.id.txtAndroidVersionV2);
+        txtAndroidBuildVersion = findViewById(R.id.txtAndroidBuildVersion);
+
+        txtManufacture.setText(Build.MANUFACTURER);
+        txtAndroidVersionV2.setText("("+Build.VERSION.SDK_INT+") " + getAndroidVersionName(Build.VERSION.SDK_INT));
+
 
         currentTime = System.currentTimeMillis();
 
@@ -167,15 +196,16 @@ public class AnalyticsV3 extends AppCompatActivity {
         long seconds = screenDurationParams / 1000;
         long days = hours / 24;
 
-        if((hours == 0) && (minutes > 0)){
-            return minutes + "M "+seconds + "S";
-        }else if((hours > 0) && (days <= 0)){
-            return hours + "H "+minutes + "M";
-        }else if(days > 0){
+        if(days > 0){
             return days + "D "+hours + "H";
+        }else if(hours > 0){
+            return hours + "H "+minutes + "M";
+        }else if(minutes > 0){
+            return minutes + "M "+seconds + "S";
         }else{
             return "0M "+seconds+"S";
         }
+
     }
 
     private void updateUiInformation(){
@@ -207,12 +237,47 @@ public class AnalyticsV3 extends AppCompatActivity {
         }
     }
 
+    private String getTypePlugged(int plugged){
+        String plugType = "Unknown";
+
+        switch (plugged) {
+            case BatteryManager.BATTERY_PLUGGED_AC:
+                plugType = "AC Charger";
+                break;
+            case BatteryManager.BATTERY_PLUGGED_USB:
+                plugType = "USB Charger";
+                break;
+            case BatteryManager.BATTERY_PLUGGED_WIRELESS:
+                plugType = "Wireless Charger";
+                break;
+            default:
+                plugType = "Not plugged";
+                break;
+        }
+
+        return plugType;
+    }
+
     private BroadcastReceiver batteryChangedTreceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+
+            int plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+            int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
             int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
             int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
             float batteryPercentage = (level / (float) scale) * 100.0f;
+
+            String batteryTechnology = intent.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY);
+            txtTech.setText(batteryTechnology);
+
+            if (status == BatteryManager.BATTERY_STATUS_CHARGING) {
+                txtStatus.setText("Charging");
+            }else{
+                txtStatus.setText("Discharge");
+            }
+
+            txtPlugged.setText(getTypePlugged(plugged));
 
             Log.v("BGSTEST", "level: " + level);
             Log.v("BGSTEST", "scale: " + scale);
@@ -271,6 +336,12 @@ public class AnalyticsV3 extends AppCompatActivity {
 
             progressBatteryHealth.setProgress(batteryHealthPercentage);
             txtAnalyticsBattHealth.setText(batteryHealthPercentage+"% ("+formatBeautifulFloat(Double.valueOf(healthInMa).floatValue())+" mA)");
+
+            txtLevel.setText(Float.valueOf(batteryPercentage).intValue() + "%");
+            txtHealth.setText(batteryHealthPercentage + "%");
+            txtMaxCapacity.setText(getBatteryCapacity().intValue() + " mA");
+            txtVoltage.setText(formatBeautifulFloat(fullVoltage) + " V");
+            txtTemp.setText(batteryTempCelcius+"°C");
 
             lastMahBattery = currentMahValue;
         }
