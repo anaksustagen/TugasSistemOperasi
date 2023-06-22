@@ -207,6 +207,7 @@ public class AnalyticsV3 extends AppCompatActivity {
 
         Map<String, Long> remainingMap = new HashMap<>();
 
+        // Convert durations to hours
         double screenOnDurationHours = screenOnDuration / (1000.0 * 60 * 60);
         double screenOffDurationHours = screenOffDuration / (1000.0 * 60 * 60);
 
@@ -215,13 +216,11 @@ public class AnalyticsV3 extends AppCompatActivity {
         double screenOffDrainRate = screenOffPercentageDecrease / screenOffDurationHours;
 
         // Estimate remaining battery time with screen on
-        long remainingTimeScreenOn = (long) (currentBatteryPercentage / screenOnDrainRate);
+        double remainingTimeScreenOn = (currentBatteryPercentage - screenOnPercentageDecrease) / screenOnDrainRate;
+        double remainingTimeScreenOff = (currentBatteryPercentage - screenOffPercentageDecrease) / screenOffDrainRate;
 
-        // Estimate remaining battery time with screen off
-        long remainingTimeScreenOff = (long) (currentBatteryPercentage / screenOffDrainRate);
-
-        remainingMap.put("remainingTimeScreenOn", remainingTimeScreenOn);
-        remainingMap.put("remainingTimeScreenOff", remainingTimeScreenOff);
+        remainingMap.put("remainingTimeScreenOn", Double.valueOf(remainingTimeScreenOn).longValue());
+        remainingMap.put("remainingTimeScreenOff", Double.valueOf(remainingTimeScreenOff).longValue());
 
         return remainingMap;
     }
