@@ -11,6 +11,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.BatteryManager;
@@ -26,6 +27,8 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import java.text.DecimalFormat;
+import java.util.HashMap;
+import java.util.Map;
 
 public class AnalyticsV3 extends AppCompatActivity {
 
@@ -132,7 +135,16 @@ public class AnalyticsV3 extends AppCompatActivity {
         txtAndroidBuildVersion = findViewById(R.id.txtAndroidBuildVersion);
 
         txtManufacture.setText(Build.MANUFACTURER);
-        txtAndroidVersionV2.setText("("+Build.VERSION.SDK_INT+") " + getAndroidVersionName(Build.VERSION.SDK_INT));
+        txtAndroidVersionV2.setText("("+Build.VERSION.RELEASE+") " + getAndroidVersionName(Build.VERSION.SDK_INT));
+
+        try {
+            PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            txtAndroidBuildVersion.setText(packageInfo.versionName);
+            // Use the versionCode variable as needed
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+
 
 
         currentTime = System.currentTimeMillis();
@@ -190,6 +202,30 @@ public class AnalyticsV3 extends AppCompatActivity {
         }
     }
 
+
+    public Map<String, Long> calculateBatteryTime(double screenOnPercentageDecrease, long screenOnDuration, double screenOffPercentageDecrease, long screenOffDuration, double currentBatteryPercentage) {
+
+        Map<String, Long> remainingMap = new HashMap<>();
+
+        double screenOnDurationHours = screenOnDuration / (1000.0 * 60 * 60);
+        double screenOffDurationHours = screenOffDuration / (1000.0 * 60 * 60);
+
+        // Calculate average battery drain rate per hour for screen on and off scenarios
+        double screenOnDrainRate = screenOnPercentageDecrease / screenOnDurationHours;
+        double screenOffDrainRate = screenOffPercentageDecrease / screenOffDurationHours;
+
+        // Estimate remaining battery time with screen on
+        long remainingTimeScreenOn = (long) (currentBatteryPercentage / screenOnDrainRate);
+
+        // Estimate remaining battery time with screen off
+        long remainingTimeScreenOff = (long) (currentBatteryPercentage / screenOffDrainRate);
+
+        remainingMap.put("remainingTimeScreenOn", remainingTimeScreenOn);
+        remainingMap.put("remainingTimeScreenOff", remainingTimeScreenOff);
+
+        return remainingMap;
+    }
+
     private String formatScreenOnDuration(long screenDurationParams) {
         long minutes = (screenDurationParams / (1000 * 60)) % 60;
         long hours = (screenDurationParams / (1000 * 60 * 60));
@@ -209,8 +245,8 @@ public class AnalyticsV3 extends AppCompatActivity {
     }
 
     private void updateUiInformation(){
-        txtTotalTimeScreenOn.setText(formatScreenOnDuration(screenOnDuration));
-        txtTotalTimeScreenOff.setText(formatScreenOnDuration(screenOffDuration));
+//        txtTotalTimeScreenOn.setText(formatScreenOnDuration(screenOnDuration));
+//        txtTotalTimeScreenOff.setText(formatScreenOnDuration(screenOffDuration));
     }
 
     private void initializeAnalytics(Context context){
@@ -262,11 +298,22 @@ public class AnalyticsV3 extends AppCompatActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
 
+            double screenOnPercentageDecrease = 10;
+            double screenOffPercentageDecrease = 5;
+
             int plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
             int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
             int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
             int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
             float batteryPercentage = (level / (float) scale) * 100.0f;
+
+            Map<String, Long> remainingPowerUntilDie = calculateBatteryTime(screenOnPercentageDecrease, screenOnDuration, screenOffPercentageDecrease, screenOffDuration, Float.valueOf(batteryPercentage).intValue());
+
+            txtTotalTimeScreenOn.setText(formatScreenOnDuration(remainingPowerUntilDie.get("remainingTimeScreenOn")));
+            txtTotalTimeScreenOff.setText(formatScreenOnDuration(remainingPowerUntilDie.get("remainingTimeScreenOff")));
+
+//            remainingMap.put("remainingTimeScreenOn", remainingTimeScreenOn);
+//            remainingMap.put("remainingTimeScreenOff", remainingTimeScreenOff);
 
             String batteryTechnology = intent.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY);
             txtTech.setText(batteryTechnology);
