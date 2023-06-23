@@ -5,29 +5,50 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AppOpsManager;
 import android.content.BroadcastReceiver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Debug;
+import android.os.Handler;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
+import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import com.example.digivobatteryanalytics.DBHelper.DigiDB;
+import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.components.Description;
+import com.github.mikephil.charting.components.XAxis;
+import com.github.mikephil.charting.components.YAxis;
+import com.github.mikephil.charting.data.Entry;
+import com.github.mikephil.charting.data.LineData;
+import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.formatter.ValueFormatter;
+
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class AnalyticsV3 extends AppCompatActivity {
@@ -81,12 +102,24 @@ public class AnalyticsV3 extends AppCompatActivity {
     private TextView txtManufacture;
     private TextView txtAndroidVersionV2;
     private TextView txtAndroidBuildVersion;
+    private Handler cpuLoadHandler;
+    private Runnable cpuLoadRunnable;
+    private TextView txtCpuLoad;
+    private DigiDB digiDb;
+    private SQLiteDatabase db;
+    private IntentFilter powerBatteryStateIntent;
+    private LineChart chart;
 
 
+    @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_analytics_v3);
+
+        digiDb = new DigiDB(this);
+        db = digiDb.getWritableDatabase();
+
 
         batteryPercentageProgress = findViewById(R.id.batteryPercentageProgress);
         batteryPercentageText = findViewById(R.id.batteryPercentageText);
@@ -133,9 +166,14 @@ public class AnalyticsV3 extends AppCompatActivity {
         txtManufacture = findViewById(R.id.txtManufacture);
         txtAndroidVersionV2 = findViewById(R.id.txtAndroidVersionV2);
         txtAndroidBuildVersion = findViewById(R.id.txtAndroidBuildVersion);
+        txtCpuLoad = findViewById(R.id.txtCpuLoad);
 
         txtManufacture.setText(Build.MANUFACTURER);
         txtAndroidVersionV2.setText("("+Build.VERSION.RELEASE+") " + getAndroidVersionName(Build.VERSION.SDK_INT));
+
+        chart = findViewById(R.id.lineChart);
+        chart.setDrawGridBackground(false);
+        chart.getDescription().setEnabled(false);
 
         try {
             PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -202,6 +240,155 @@ public class AnalyticsV3 extends AppCompatActivity {
         }
     }
 
+    private String getCurrentDate(){
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        Date currentDate = new Date();
+        String formattedDate = dateFormat.format(currentDate);
+
+        return formattedDate;
+    }
+
+    private void createChartAnalyticsChargeDischarge(){
+        SQLiteDatabase db = digiDb.getReadableDatabase();
+
+        String[] projection = {DigiDB.COLUMN_DATE, DigiDB.COLUMN_CHARGE, DigiDB.COLUMN_DISCHARGE};
+        String selection = ""; // Specify any selection criteria if needed
+        String[] selectionArgs = null; // Replace with actual selection arguments if needed
+        String sortOrder = DigiDB.COLUMN_DATE + " ASC"; // Specify the sort order if required
+
+        Cursor cursor = db.query(DigiDB.TABLE_NAME, projection, selection, selectionArgs, null, null, sortOrder);
+
+        List<Entry> chargeEntries = new ArrayList<>();
+        List<Entry> dischargeEntries = new ArrayList<>();
+
+        List<String> dates = new ArrayList<>();
+
+        int idx = 0;
+        while (cursor.moveToNext()) {
+            int columnIndexDate = cursor.getColumnIndex(DigiDB.COLUMN_DATE);
+            int columnIndexCharge = cursor.getColumnIndex(DigiDB.COLUMN_CHARGE);
+            int columnIndexDischarge = cursor.getColumnIndex(DigiDB.COLUMN_DISCHARGE);
+
+            if (columnIndexDate != -1 && columnIndexCharge != -1 && columnIndexDischarge != -1) {
+                String date = cursor.getString(columnIndexDate);
+                double charge = cursor.getDouble(columnIndexCharge);
+                double discharge = cursor.getDouble(columnIndexDischarge);
+
+                dates.add(date);
+                chargeEntries.add(new Entry(idx, Double.valueOf(charge).floatValue()));
+                dischargeEntries.add(new Entry(idx, Double.valueOf(discharge).floatValue()));
+
+                Log.v("ChargeCycles",date+": ChargeCycles ("+charge+"), DisChargeCycles("+discharge+")");
+
+                idx++;
+            }
+        }
+
+        cursor.close();
+        db.close();
+
+        LineDataSet chargeDataSet = new LineDataSet(chargeEntries, "Cycle Charge");
+        chargeDataSet.setColor(Color.BLUE);
+        chargeDataSet.setCircleColor(Color.BLUE);
+        chargeDataSet.setLineWidth(2f);
+        chargeDataSet.setCircleRadius(4f);
+        chargeDataSet.setDrawCircleHole(true);
+        chargeDataSet.setValueTextSize(10f);
+
+        LineDataSet dischargeDataSet = new LineDataSet(dischargeEntries, "Cycle Discharge");
+        dischargeDataSet.setColor(Color.RED);
+        dischargeDataSet.setCircleColor(Color.RED);
+        dischargeDataSet.setLineWidth(2f);
+        dischargeDataSet.setCircleRadius(4f);
+        dischargeDataSet.setDrawCircleHole(true);
+        dischargeDataSet.setValueTextSize(10f);
+
+        LineData lineData = new LineData(chargeDataSet, dischargeDataSet);
+
+        chart.setData(lineData);
+        // Customize X-axis
+        XAxis xAxis = chart.getXAxis();
+        xAxis.setValueFormatter(new ValueFormatter() {
+            @Override
+            public String getFormattedValue(float value) {
+                int index = (int) value;
+                if (index >= 0 && index < dates.size()) {
+                    return dates.get(index);
+                }
+                return "";
+            }
+        });
+        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
+        xAxis.setGranularity(1f);
+        xAxis.setDrawGridLines(false);
+
+        // Customize left Y-axis
+        YAxis leftAxis = chart.getAxisLeft();
+        leftAxis.setAxisMinimum(0f);
+        leftAxis.setGranularity(1f);
+        leftAxis.setDrawGridLines(true);
+
+        // Customize right Y-axis
+        YAxis rightAxis = chart.getAxisRight();
+        rightAxis.setEnabled(false);
+
+        // Customize chart description
+        Description description = new Description();
+        description.setText(""); // Empty description
+        chart.setDescription(description);
+
+        // Update the chart view
+        chart.invalidate();
+    }
+
+    private void recordChargingLifeCycles(String type){
+
+        if((type != null) && !type.equals("")){
+            db = digiDb.getWritableDatabase();
+            String selection = DigiDB.COLUMN_DATE + " = ?";
+            String[] selectionArgs = { getCurrentDate() };
+            String[] projection = { DigiDB.COLUMN_CHARGE, DigiDB.COLUMN_DISCHARGE };
+            Cursor cursor = db.query(DigiDB.TABLE_NAME, projection, selection, selectionArgs, null, null, null);
+            double currentCharge = 0.0;
+            double currentDisCharge = 0.0;
+            if (cursor.moveToFirst()) {
+                int chargeIndex = cursor.getColumnIndex(DigiDB.COLUMN_CHARGE);
+                int disChargeIndex = cursor.getColumnIndex(DigiDB.COLUMN_DISCHARGE);
+
+                currentCharge = cursor.getDouble(chargeIndex);
+                currentDisCharge = cursor.getDouble(disChargeIndex);
+            }
+            cursor.close(); //Close Connection before starting new connection again
+            db.close();
+
+            db = digiDb.getWritableDatabase();
+            ContentValues values = new ContentValues();
+            values.put(DigiDB.COLUMN_DATE, getCurrentDate()); // Replace with actual date
+
+            if(type.equals("charging")){
+                double newCharge = currentCharge + 1;
+                values.put(DigiDB.COLUMN_CHARGE, newCharge);
+            }else{
+                double newDischarge = currentDisCharge + 1;
+                values.put(DigiDB.COLUMN_DISCHARGE, newDischarge);
+            }
+
+            String whereClause = DigiDB.COLUMN_DATE + " = ?";
+            String[] whereArgs = { getCurrentDate() };
+            int rowsUpdated = db.update(DigiDB.TABLE_NAME, values, whereClause, whereArgs);
+
+            if (rowsUpdated == 0) {
+                // Data doesn't exist for the given date, insert it as a new row
+                values.put(DigiDB.COLUMN_DATE, getCurrentDate());
+                db.insert(DigiDB.TABLE_NAME, null, values);
+            }
+
+            db.close();
+
+            Log.v("recordChargingLifeCycles", "Successfully");
+        }
+
+    }
 
     public Map<String, Long> calculateBatteryTime(double screenOnPercentageDecrease, long screenOnDuration, double screenOffPercentageDecrease, long screenOffDuration, double currentBatteryPercentage) {
         Map<String, Long> remainingMap = new HashMap<>();
@@ -270,6 +457,28 @@ public class AnalyticsV3 extends AppCompatActivity {
         screenIntent.addAction(Intent.ACTION_SCREEN_ON);
         screenIntent.addAction(Intent.ACTION_SCREEN_OFF);
         registerReceiver(screenReceiver, screenIntent);
+
+        powerBatteryStateIntent = new IntentFilter();
+        powerBatteryStateIntent.addAction(Intent.ACTION_POWER_CONNECTED);
+        powerBatteryStateIntent.addAction(Intent.ACTION_POWER_DISCONNECTED);
+        registerReceiver(powerBatteryStateReceiver, powerBatteryStateIntent);
+
+        cpuLoadHandler = new Handler();
+        cpuLoadRunnable = new Runnable() {
+            @Override
+            public void run() {
+                // Get the CPU load percentage
+                double cpuLoadPercentage = getCpuLoadPercentage();
+
+                if(txtCpuLoad != null){
+                    txtCpuLoad.setText(formatBeautifulFloat(Double.valueOf(cpuLoadPercentage).floatValue()) + "%");
+                }
+                createChartAnalyticsChargeDischarge();
+
+                // Schedule the next update after 1 second
+                cpuLoadHandler.postDelayed(this, 1000);
+            }
+        };
     }
 
 
@@ -319,6 +528,20 @@ public class AnalyticsV3 extends AppCompatActivity {
             return 2.0f;  // 2% per minute
         }
     }
+
+    private BroadcastReceiver powerBatteryStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action != null) {
+                if (action.equals(Intent.ACTION_POWER_CONNECTED)) {
+                    recordChargingLifeCycles("charging");
+                } else if (action.equals(Intent.ACTION_POWER_DISCONNECTED)) {
+                    recordChargingLifeCycles("discharging");
+                }
+            }
+        }
+    };
 
     private BroadcastReceiver batteryChangedTreceiver = new BroadcastReceiver() {
         @Override
@@ -527,6 +750,37 @@ public class AnalyticsV3 extends AppCompatActivity {
     private void requestPackageUsageStatsPermission(Activity activity, int requestCode) {
         Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
         activity.startActivityForResult(intent, requestCode);
+    }
+
+    private double getCpuLoadPercentage() {
+        double cpuLoadPercentage = 0;
+
+        try {
+            double totalCpuUsage = Debug.threadCpuTimeNanos() / 1000000;
+            double appCpuUsage = Debug.threadCpuTimeNanos() / 1000000;
+            int numProcessors = Runtime.getRuntime().availableProcessors();
+
+            cpuLoadPercentage = (appCpuUsage / (totalCpuUsage * numProcessors)) * 100;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return cpuLoadPercentage;
+    }
+
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Start updating CPU load percentage
+        cpuLoadHandler.post(cpuLoadRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Stop updating CPU load percentage
+        cpuLoadHandler.removeCallbacks(cpuLoadRunnable);
     }
 
     private String getAndroidVersionName(int sdkInt) {

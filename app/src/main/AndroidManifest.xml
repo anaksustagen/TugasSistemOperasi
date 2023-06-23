@@ -17,6 +17,11 @@
     <uses-permission android:name="android.permission.GET_PACKAGE_SIZE" />
     <uses-permission android:name="android.permission.GET_TASKS" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.REAL_GET_TASKS"
+        tools:ignore="ProtectedPermissions" />
+
+    <uses-permission android:name="android.permission.ACTION_POWER_CONNECTED"/>
+    <uses-permission android:name="android.permission.ACTION_POWER_DISCONNECTED"/>
 
     <application
         android:allowBackup="true"
