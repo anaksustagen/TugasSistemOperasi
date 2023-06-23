@@ -121,7 +121,7 @@
                         app:layout_constraintBottom_toBottomOf="parent"
                         app:layout_constraintEnd_toStartOf="@+id/txtTotalTimeScreenOff"
                         app:layout_constraintTop_toTopOf="parent"
-                        app:srcCompat="@drawable/restics" />
+                        app:srcCompat="@drawable/newiconflash" />
                 </androidx.constraintlayout.widget.ConstraintLayout>
 
                 <LinearLayout

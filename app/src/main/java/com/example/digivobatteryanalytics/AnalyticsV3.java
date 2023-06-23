@@ -204,23 +204,37 @@ public class AnalyticsV3 extends AppCompatActivity {
 
 
     public Map<String, Long> calculateBatteryTime(double screenOnPercentageDecrease, long screenOnDuration, double screenOffPercentageDecrease, long screenOffDuration, double currentBatteryPercentage) {
-
         Map<String, Long> remainingMap = new HashMap<>();
+
+        Log.v("CBT", "==============================");
 
         // Convert durations to hours
         double screenOnDurationHours = screenOnDuration / (1000.0 * 60 * 60);
         double screenOffDurationHours = screenOffDuration / (1000.0 * 60 * 60);
 
+        Log.v("CBT", "screenOnDurationHours: " + screenOnDurationHours);
+        Log.v("CBT", "screenOffDurationHours: " + screenOffDurationHours);
+
         // Calculate average battery drain rate per hour for screen on and off scenarios
         double screenOnDrainRate = screenOnPercentageDecrease / screenOnDurationHours;
         double screenOffDrainRate = screenOffPercentageDecrease / screenOffDurationHours;
+
+
+        Log.v("CBT", "screenOnPercentageDecrease: " + screenOnPercentageDecrease);
+        Log.v("CBT", "screenOffPercentageDecrease: " + screenOffPercentageDecrease);
+        Log.v("CBT", "screenOnDuration: " + screenOnDuration);
+        Log.v("CBT", "screenOffDuration: " + screenOffDuration);
 
         // Estimate remaining battery time with screen on
         double remainingTimeScreenOn = (currentBatteryPercentage - screenOnPercentageDecrease) / screenOnDrainRate;
         double remainingTimeScreenOff = (currentBatteryPercentage - screenOffPercentageDecrease) / screenOffDrainRate;
 
-        remainingMap.put("remainingTimeScreenOn", Double.valueOf(remainingTimeScreenOn).longValue());
-        remainingMap.put("remainingTimeScreenOff", Double.valueOf(remainingTimeScreenOff).longValue());
+        Log.v("CBT", "remainingTimeScreenOn: " + remainingTimeScreenOn);
+        Log.v("CBT", "remainingTimeScreenOff: " + remainingTimeScreenOff);
+        Log.v("CBT", "==============================");
+
+        remainingMap.put("remainingTimeScreenOn", Math.round(remainingTimeScreenOn));
+        remainingMap.put("remainingTimeScreenOff", Math.round(remainingTimeScreenOff));
 
         return remainingMap;
     }
@@ -293,6 +307,19 @@ public class AnalyticsV3 extends AppCompatActivity {
         return plugType;
     }
 
+    private float getAverageDischargeRate(int batteryLevel) {
+
+        if (batteryLevel >= 80) {
+            return 0.5f;  // 0.5% per minute
+        } else if (batteryLevel >= 50) {
+            return 1.0f;  // 1% per minute
+        } else if (batteryLevel >= 20) {
+            return 1.5f;  // 1.5% per minute
+        } else {
+            return 2.0f;  // 2% per minute
+        }
+    }
+
     private BroadcastReceiver batteryChangedTreceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -306,10 +333,29 @@ public class AnalyticsV3 extends AppCompatActivity {
             int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
             float batteryPercentage = (level / (float) scale) * 100.0f;
 
+            BatteryManager batteryManager = (BatteryManager) context.getSystemService(Context.BATTERY_SERVICE);
+            long averageDischargeRate = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE);
+            float averageDischargeRatet = averageDischargeRate / 1000.0f; // Convert to milliwatts
+            averageDischargeRate = Float.valueOf(averageDischargeRatet).longValue();
+
+            if(averageDischargeRate < 0){
+                averageDischargeRate = averageDischargeRate * -1;
+            }
+
+            // Calculate the remaining capacity in milliampere-hours (mAh)
+            float remainingCapacity = level / 100f * getBatteryCapacity().intValue();
+            float remainingBatteryTimeMs = remainingCapacity / averageDischargeRate * 60 * 60 * 1000;
+
+
+            Log.v("CBT","remainingBatteryTimeMs: "+ remainingBatteryTimeMs);
+            Log.v("CBT", "averageDischargeRate: "+ averageDischargeRate);
+
+
             Map<String, Long> remainingPowerUntilDie = calculateBatteryTime(screenOnPercentageDecrease, screenOnDuration, screenOffPercentageDecrease, screenOffDuration, Float.valueOf(batteryPercentage).intValue());
 
-            txtTotalTimeScreenOn.setText(formatScreenOnDuration(remainingPowerUntilDie.get("remainingTimeScreenOn")));
-            txtTotalTimeScreenOff.setText(formatScreenOnDuration(remainingPowerUntilDie.get("remainingTimeScreenOff")));
+            txtTotalTimeScreenOn.setText(formatScreenOnDuration(Float.valueOf(remainingBatteryTimeMs).longValue()));
+
+//            txtTotalTimeScreenOff.setText(formatScreenOnDuration(remainingPowerUntilDie.get("remainingTimeScreenOff")));
 
 //            remainingMap.put("remainingTimeScreenOn", remainingTimeScreenOn);
 //            remainingMap.put("remainingTimeScreenOff", remainingTimeScreenOff);
@@ -319,8 +365,10 @@ public class AnalyticsV3 extends AppCompatActivity {
 
             if (status == BatteryManager.BATTERY_STATUS_CHARGING) {
                 txtStatus.setText("Charging");
+                txtTotalTimeScreenOff.setText(formatBeautifulFloat(averageDischargeRate)+" mA");
             }else{
                 txtStatus.setText("Discharge");
+                txtTotalTimeScreenOff.setText("-"+ formatBeautifulFloat(averageDischargeRate)+" mA");
             }
 
             txtPlugged.setText(getTypePlugged(plugged));
@@ -378,6 +426,7 @@ public class AnalyticsV3 extends AppCompatActivity {
             txtAnalyticsAvgBattUsage.setText(formatBeautifulFloat(averageBatteryUsage)+" mA/H");
             txtAnalyticsBattTemp.setText(batteryTempCelcius+"°C");
             txtAnalyticsBattVoltage.setText(formatBeautifulFloat(fullVoltage) + "V");
+
 
 
             progressBatteryHealth.setProgress(batteryHealthPercentage);
