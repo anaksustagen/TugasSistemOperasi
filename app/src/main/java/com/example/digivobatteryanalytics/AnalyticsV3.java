@@ -8,11 +8,13 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AppOpsManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -23,17 +25,21 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Debug;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.example.digivobatteryanalytics.DBHelper.DigiDB;
+import com.example.digivobatteryanalytics.utils.General;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.Description;
 import com.github.mikephil.charting.components.XAxis;
@@ -109,6 +115,7 @@ public class AnalyticsV3 extends AppCompatActivity {
     private SQLiteDatabase db;
     private IntentFilter powerBatteryStateIntent;
     private LineChart chart;
+    private SharedPreferences sharedPreferences;
 
 
     @SuppressLint("MissingInflatedId")
@@ -119,6 +126,10 @@ public class AnalyticsV3 extends AppCompatActivity {
 
         digiDb = new DigiDB(this);
         db = digiDb.getWritableDatabase();
+
+        sharedPreferences = getSharedPreferences("MyPrefs", Context.MODE_PRIVATE);
+        sharedPreferences.edit().putBoolean("hasBeenShowingChargingReached", false).commit();
+        sharedPreferences.edit().putBoolean("hasBeenShowingLowBattWarn", false).commit();
 
 
         batteryPercentageProgress = findViewById(R.id.batteryPercentageProgress);
@@ -240,6 +251,26 @@ public class AnalyticsV3 extends AppCompatActivity {
         }
     }
 
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here.
+        int id = item.getItemId();
+
+        if (id == R.id.action_settings) {
+            General.showWASettingsDialog(this);
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
     private String getCurrentDate(){
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
         Date currentDate = new Date();
@@ -275,8 +306,8 @@ public class AnalyticsV3 extends AppCompatActivity {
                 double discharge = cursor.getDouble(columnIndexDischarge);
 
                 dates.add(date);
-                chargeEntries.add(new Entry(idx, Double.valueOf(charge).floatValue()));
-                dischargeEntries.add(new Entry(idx, Double.valueOf(discharge).floatValue()));
+                chargeEntries.add(new Entry(idx, Double.valueOf(charge).intValue()));
+                dischargeEntries.add(new Entry(idx, Double.valueOf(discharge).intValue()));
 
                 Log.v("ChargeCycles",date+": ChargeCycles ("+charge+"), DisChargeCycles("+discharge+")");
 
@@ -288,8 +319,8 @@ public class AnalyticsV3 extends AppCompatActivity {
         db.close();
 
         LineDataSet chargeDataSet = new LineDataSet(chargeEntries, "Cycle Charge");
-        chargeDataSet.setColor(Color.BLUE);
-        chargeDataSet.setCircleColor(Color.BLUE);
+        chargeDataSet.setColor(Color.GREEN);
+        chargeDataSet.setCircleColor(Color.GREEN);
         chargeDataSet.setLineWidth(2f);
         chargeDataSet.setCircleRadius(4f);
         chargeDataSet.setDrawCircleHole(true);
@@ -366,9 +397,11 @@ public class AnalyticsV3 extends AppCompatActivity {
             values.put(DigiDB.COLUMN_DATE, getCurrentDate()); // Replace with actual date
 
             if(type.equals("charging")){
+                //Ketika ada event nyolok / cash maka akan ngercord
                 double newCharge = currentCharge + 1;
                 values.put(DigiDB.COLUMN_CHARGE, newCharge);
             }else{
+                //Ketika ada event mgetlepas kabel / selesai cash maka akan ngercord
                 double newDischarge = currentDisCharge + 1;
                 values.put(DigiDB.COLUMN_DISCHARGE, newDischarge);
             }
@@ -543,6 +576,47 @@ public class AnalyticsV3 extends AppCompatActivity {
         }
     };
 
+    private void HandleBatteryPercentageState(float batteryPercentage){
+
+        Log.v("batteryPercentage", batteryPercentage + "%");
+
+        if(batteryPercentage >= 85){
+            boolean hasBeenShowingChargingReached = sharedPreferences.getBoolean("hasBeenShowingChargingReached", false);
+
+            Log.v("hasBeenShowingChargingReached", "VAL: " + hasBeenShowingChargingReached);
+
+            if(!hasBeenShowingChargingReached){
+                General.showHeadsUpNotification(getApplicationContext(),"Charging 85% Reached", "Please unplug your charger to maintain battery health", null);
+                sharedPreferences.edit().putBoolean("hasBeenShowingChargingReached", true).commit();
+                General.sendingAlertToWhatsapp("morethan85", getApplicationContext());
+            }
+        }else if(batteryPercentage <= 20){
+            boolean hasBeenShowingLowBattWarn = sharedPreferences.getBoolean("hasBeenShowingLowBattWarn", false);
+
+            Log.v("hasBeenShowingLowBattWarn", "VAL: " + hasBeenShowingLowBattWarn);
+
+            if(!hasBeenShowingLowBattWarn){
+                Intent intentPowerSaving = new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS);
+                PendingIntent pendingIntentPowerSaving = PendingIntent.getActivity(getApplicationContext(), 0, intentPowerSaving, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+                Map<String,PendingIntent> actButtons = new HashMap<>();
+                actButtons.put("Turn On Power Saving", pendingIntentPowerSaving);
+
+                General.showHeadsUpNotification(getApplicationContext(),"Battery remaining less than 20%", "Please turn on power saving mode to save battery usage", actButtons);
+                sharedPreferences.edit().putBoolean("hasBeenShowingLowBattWarn", true).commit();
+
+                General.sendingAlertToWhatsapp("belowthan20", getApplicationContext());
+            }
+        }
+
+        if(batteryPercentage < 85){
+            sharedPreferences.edit().putBoolean("hasBeenShowingChargingReached", false).commit();
+        }
+        if(batteryPercentage > 20){
+            sharedPreferences.edit().putBoolean("hasBeenShowingLowBattWarn", false).commit();
+        }
+    }
+
     private BroadcastReceiver batteryChangedTreceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -556,6 +630,8 @@ public class AnalyticsV3 extends AppCompatActivity {
             int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
             float batteryPercentage = (level / (float) scale) * 100.0f;
 
+            HandleBatteryPercentageState(batteryPercentage);
+
             BatteryManager batteryManager = (BatteryManager) context.getSystemService(Context.BATTERY_SERVICE);
             long averageDischargeRate = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE);
             float averageDischargeRatet = averageDischargeRate / 1000.0f; // Convert to milliwatts
@@ -566,6 +642,8 @@ public class AnalyticsV3 extends AppCompatActivity {
             }
 
             // Calculate the remaining capacity in milliampere-hours (mAh)
+
+            // remainingCapacity = 0.8 * 5000
             float remainingCapacity = level / 100f * getBatteryCapacity().intValue();
             float remainingBatteryTimeMs = remainingCapacity / averageDischargeRate * 60 * 60 * 1000;
 
@@ -576,6 +654,7 @@ public class AnalyticsV3 extends AppCompatActivity {
 
             Map<String, Long> remainingPowerUntilDie = calculateBatteryTime(screenOnPercentageDecrease, screenOnDuration, screenOffPercentageDecrease, screenOffDuration, Float.valueOf(batteryPercentage).intValue());
 
+            //Remaining Live Battery / 80% kuat berapa jam lagi
             txtTotalTimeScreenOn.setText(formatScreenOnDuration(Float.valueOf(remainingBatteryTimeMs).longValue()));
 
 //            txtTotalTimeScreenOff.setText(formatScreenOnDuration(remainingPowerUntilDie.get("remainingTimeScreenOff")));
